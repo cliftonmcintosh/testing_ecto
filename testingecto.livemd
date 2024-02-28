@@ -1,0 +1,17 @@
+# Untitled notebook
+
+```elixir
+Mix.install(
+  [
+    {:testing_ecto, path: Path.join(__DIR__, "."), env: :dev}
+  ],
+  config_path: :testing_ecto,
+  lockfile: :testing_ecto
+)
+```
+
+## Untitled
+
+```elixir
+my_string = "my string"
+```
