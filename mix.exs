@@ -28,17 +28,17 @@ defmodule TestingEcto.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test"]  
+  defp elixirc_paths(:test), do: ["lib", "test"]
   defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ecto, "~> 3.4"},
-      {:ecto_sql, "~> 3.4"},
+      {:ecto, "~> 3.11"},
+      {:ecto_sql, "~> 3.11"},
       {:ex_machina, "~> 2.4", only: :test},
       {:faker, "~> 0.13.0", only: [:test, :dev]},
-      {:postgrex, "~> 0.15.0"}
+      {:postgrex, "~> 0.16"}
     ]
   end
 end
