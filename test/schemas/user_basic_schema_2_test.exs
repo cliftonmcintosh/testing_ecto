@@ -1,11 +1,11 @@
-#---
+# ---
 # Excerpted from "Testing Elixir",
 # published by The Pragmatic Bookshelf.
 # Copyrights apply to this code. It may not be used to create training material,
 # courses, books, articles, and the like. Contact us if you are in doubt.
 # We make no guarantees that this code is fit for any purpose.
 # Visit http://www.pragmaticprogrammer.com/titles/lmelixir for more book information.
-#---
+# ---
 defmodule TestingEcto.Schemas.UserBasicSchema2Test do
   use ExUnit.Case
   alias Ecto.Changeset
@@ -20,12 +20,12 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
     {:phone_number, :string}
   ]
   @optional [:favorite_number]
-  describe "fields and types" do   
-    @tag :schema_definition  
+  describe "fields and types" do
+    @tag :schema_definition
     test "it has the correct fields and types" do
       actual_fields_with_types =
-        for field <- UserBasicSchema.__schema__(:fields) do 
-          type = UserBasicSchema.__schema__(:type, field) 
+        for field <- UserBasicSchema.__schema__(:fields) do
+          type = UserBasicSchema.__schema__(:type, field)
           {field, type}
         end
 
@@ -33,7 +33,6 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
                MapSet.new(@expected_fields_with_types)
     end
   end
-
 
   describe "changeset/1" do
     test "success: returns a valid changeset when given valid arguments" do
@@ -47,19 +46,17 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
       for {field, _} <- @expected_fields_with_types, field not in mutated do
         actual = Map.get(changes, field)
         expected = valid_params[Atom.to_string(field)]
+
         assert actual == expected,
-               "Values did not match for field: #{field}\nexpected: #{
-                 inspect(expected)
-               }\nactual: #{inspect(actual)}"
+               "Values did not match for field: #{field}\nexpected: #{inspect(expected)}\nactual: #{inspect(actual)}"
       end
 
       expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
       assert changes.date_of_birth == expected_dob
     end
 
-
     test "error: returns an error changeset when given un-castable values" do
-      invalid_params = invalid_params(@expected_fields_with_types)  
+      invalid_params = invalid_params(@expected_fields_with_types)
 
       assert %Changeset{valid?: false, errors: errors} =
                UserBasicSchema.changeset(invalid_params)
@@ -73,14 +70,13 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
       end
     end
 
-
     test "error: returns error changeset when required fields are missing" do
       params = %{}
 
       assert %Changeset{valid?: false, errors: errors} =
                UserBasicSchema.changeset(params)
 
-      for {field, _} <- @expected_fields_with_types, field not in @optional do 
+      for {field, _} <- @expected_fields_with_types, field not in @optional do
         assert errors[field], "The field :#{field} is missing from errors."
         {_, meta} = errors[field]
 
@@ -93,7 +89,6 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
                "The optional field #{field} is required when it shouldn't be."
       end
     end
-
   end
 
   defp valid_params(fields_with_types) do
@@ -108,7 +103,6 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
     end
   end
 
-
   defp invalid_params(fields_with_types) do
     invalid_value_by_type = %{
       date: fn -> Faker.Lorem.word() end,
@@ -120,6 +114,4 @@ defmodule TestingEcto.Schemas.UserBasicSchema2Test do
       {Atom.to_string(field), invalid_value_by_type[type].()}
     end
   end
-
-
 end

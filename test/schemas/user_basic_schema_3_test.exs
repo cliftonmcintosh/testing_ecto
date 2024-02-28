@@ -1,13 +1,13 @@
-#---
+# ---
 # Excerpted from "Testing Elixir",
 # published by The Pragmatic Bookshelf.
 # Copyrights apply to this code. It may not be used to create training material,
 # courses, books, articles, and the like. Contact us if you are in doubt.
 # We make no guarantees that this code is fit for any purpose.
 # Visit http://www.pragmaticprogrammer.com/titles/lmelixir for more book information.
-#---
-defmodule TestingEcto.Schemas.UserBasicSchema3Test do  
-  use TestingEcto.SchemaCase  
+# ---
+defmodule TestingEcto.Schemas.UserBasicSchema3Test do
+  use TestingEcto.SchemaCase
   alias TestingEcto.Schemas.UserBasicSchema
 
   @expected_fields_with_types [
@@ -46,10 +46,9 @@ defmodule TestingEcto.Schemas.UserBasicSchema3Test do
       for {field, _} <- @expected_fields_with_types, field not in mutated do
         actual = Map.get(changes, field)
         expected = valid_params[Atom.to_string(field)]
+
         assert actual == expected,
-               "Values did not match for field: #{field}\nexpected: #{
-                 inspect(expected)
-               }\nactual: #{inspect(actual)}"
+               "Values did not match for field: #{field}\nexpected: #{inspect(expected)}\nactual: #{inspect(actual)}"
       end
 
       expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
@@ -57,7 +56,7 @@ defmodule TestingEcto.Schemas.UserBasicSchema3Test do
     end
 
     test "error: returns an error changeset when given un-castable values" do
-      invalid_params = invalid_params(@expected_fields_with_types)  
+      invalid_params = invalid_params(@expected_fields_with_types)
 
       assert %Changeset{valid?: false, errors: errors} =
                UserBasicSchema.changeset(invalid_params)
@@ -77,7 +76,7 @@ defmodule TestingEcto.Schemas.UserBasicSchema3Test do
       assert %Changeset{valid?: false, errors: errors} =
                UserBasicSchema.changeset(params)
 
-      for {field, _} <- @expected_fields_with_types, field not in @optional do 
+      for {field, _} <- @expected_fields_with_types, field not in @optional do
         assert errors[field], "The field :#{field} is missing from errors."
         {_, meta} = errors[field]
 
@@ -90,6 +89,5 @@ defmodule TestingEcto.Schemas.UserBasicSchema3Test do
                "The optional field #{field} is required when it shouldn't be."
       end
     end
-
   end
 end

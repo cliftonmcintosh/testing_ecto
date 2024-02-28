@@ -1,14 +1,14 @@
-#---
+# ---
 # Excerpted from "Testing Elixir",
 # published by The Pragmatic Bookshelf.
 # Copyrights apply to this code. It may not be used to create training material,
 # courses, books, articles, and the like. Contact us if you are in doubt.
 # We make no guarantees that this code is fit for any purpose.
 # Visit http://www.pragmaticprogrammer.com/titles/lmelixir for more book information.
-#---
-defmodule TestingEcto.Schemas.UserValidatorTest do 
+# ---
+defmodule TestingEcto.Schemas.UserValidatorTest do
   use TestingEcto.SchemaCase
-  alias TestingEcto.Schemas.UserValidator  
+  alias TestingEcto.Schemas.UserValidator
 
   @expected_fields_with_types [
     {:date_of_birth, :date},
@@ -35,25 +35,26 @@ defmodule TestingEcto.Schemas.UserValidatorTest do
     end
   end
 
-  describe "cast_and_validate/1" do  
+  describe "cast_and_validate/1" do
     test "success: returns a valid changeset when given valid arguments" do
       valid_params = valid_params(@expected_fields_with_types)
 
-      {:ok, result} = UserValidator.cast_and_validate(valid_params)  
-      assert %UserValidator{} = result  
+      {:ok, result} = UserValidator.cast_and_validate(valid_params)
+      assert %UserValidator{} = result
       mutated = [:date_of_birth]
 
       for {field, _} <- @expected_fields_with_types, field not in mutated do
-        assert Map.get(result, field) == valid_params[Atom.to_string(field)]  
+        assert Map.get(result, field) == valid_params[Atom.to_string(field)]
       end
 
       expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
-      assert result.date_of_birth == expected_dob   
+      assert result.date_of_birth == expected_dob
     end
+
     test "error: returns an error changeset when given un-castable values" do
       invalid_params = invalid_params(@expected_fields_with_types)
 
-      assert {:error, %Changeset{errors: errors}} =  
+      assert {:error, %Changeset{errors: errors}} =
                UserValidator.cast_and_validate(invalid_params)
 
       for {field, _} <- @expected_fields_with_types do

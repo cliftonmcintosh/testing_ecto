@@ -1,11 +1,11 @@
-#---
+# ---
 # Excerpted from "Testing Elixir",
 # published by The Pragmatic Bookshelf.
 # Copyrights apply to this code. It may not be used to create training material,
 # courses, books, articles, and the like. Contact us if you are in doubt.
 # We make no guarantees that this code is fit for any purpose.
 # Visit http://www.pragmaticprogrammer.com/titles/lmelixir for more book information.
-#---
+# ---
 defmodule TestingEcto.Schemas.UserDatabaseSchemaTest do
   use TestingEcto.SchemaCase
   alias TestingEcto.Schemas.UserDatabaseSchema
@@ -85,17 +85,18 @@ defmodule TestingEcto.Schemas.UserDatabaseSchemaTest do
 
     test "error: returns error changeset when an email address is reused" do
       Ecto.Adapters.SQL.Sandbox.checkout(TestingEcto.Repo)
+
       {:ok, existing_user} =
         valid_params(@expected_fields_with_types)
         |> UserDatabaseSchema.changeset()
-        |> TestingEcto.Repo.insert()  
+        |> TestingEcto.Repo.insert()
 
       changeset_with_repeated_email =
         valid_params(@expected_fields_with_types)
-        |> Map.put("email", existing_user.email) 
+        |> Map.put("email", existing_user.email)
         |> UserDatabaseSchema.changeset()
 
-      assert {:error, %Changeset{valid?: false, errors: errors}} = 
+      assert {:error, %Changeset{valid?: false, errors: errors}} =
                TestingEcto.Repo.insert(changeset_with_repeated_email)
 
       assert errors[:email], "The field :email is missing from errors."
