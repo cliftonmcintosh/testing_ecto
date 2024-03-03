@@ -6,7 +6,7 @@
 # We make no guarantees that this code is fit for any purpose.
 # Visit http://www.pragmaticprogrammer.com/titles/lmelixir for more book information.
 # ---
-use Mix.Config
+import Config
 
 config :testing_ecto, TestingEcto.Repo,
   database: "testing_ecto_test",
