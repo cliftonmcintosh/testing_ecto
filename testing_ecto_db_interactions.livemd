@@ -3,7 +3,7 @@
 ```elixir
 Mix.install(
   [
-    {:testing_ecto, path: Path.join(__DIR__, "."), env: :dev}
+    {:testing_ecto, path: Path.join(__DIR__, "."), env: :test}
   ],
   config_path: :testing_ecto,
   lockfile: :testing_ecto
@@ -384,6 +384,607 @@ defmodule TestingEcto.Schemas.UserBasicSchemaInvalidParamsHelperTest do
 
     for {field, type} <- fields_with_types, into: %{} do
       {Atom.to_string(field), invalid_value_by_type[type].()}
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+<!-- livebook:{"branch_parent_index":2} -->
+
+## Creating a SchemaCase for Shared Test Code
+
+### Functions that can be useful in more than one test module moved to a `Case` module
+
+Functions for generating valid and invalid params can be re-used by placing them in a shared `ExUnit` `Case` module.
+
+```elixir
+defmodule TestingEcto.FirstSchemaCase do
+  use ExUnit.CaseTemplate
+
+  using do
+    quote do
+      alias Ecto.Changeset
+      import TestingEcto.SchemaCase
+    end
+  end
+
+  setup _ do
+    Ecto.Adapters.SQL.Sandbox.mode(TestingEcto.Repo, :manual)
+  end
+
+  def valid_params(fields_with_types) do
+    valid_value_by_type = %{
+      date: fn -> to_string(Faker.Date.date_of_birth()) end,
+      float: fn -> :rand.uniform() * 10 end,
+      string: fn -> Faker.Lorem.word() end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), valid_value_by_type[type].()}
+    end
+  end
+
+  def invalid_params(fields_with_types) do
+    invalid_value_by_type = %{
+      date: fn -> Faker.Lorem.word() end,
+      float: fn -> Faker.Lorem.word() end,
+      string: fn -> DateTime.utc_now() end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), invalid_value_by_type[type].()}
+    end
+  end
+end
+```
+
+### Using `TestingEcto.SchemaCase` in a test module
+
+```elixir
+defmodule TestingEcto.Schemas.UserBasicSchema3Test do
+  use TestingEcto.FirstSchemaCase
+
+  alias TestingEcto.Schemas.UserBasicSchema
+
+  @expected_fields_with_types [
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:last_name, :string},
+    {:phone_number, :string}
+  ]
+  @optional [:favorite_number]
+
+  describe "fields and types" do
+    @tag :schema_definition
+    test "it has the correct fields and types" do
+      actual_fields_with_types =
+        for field <- UserBasicSchema.__schema__(:fields) do
+          type = UserBasicSchema.__schema__(:type, field)
+          {field, type}
+        end
+
+      assert Enum.sort(actual_fields_with_types) ==
+               Enum.sort(@expected_fields_with_types)
+    end
+  end
+
+  describe "changeset/1" do
+    test "success: returns a valid changeset when given valid arguments" do
+      valid_params = valid_params(@expected_fields_with_types)
+
+      changeset = UserBasicSchema.changeset(valid_params)
+      assert %Changeset{valid?: true, changes: changes} = changeset
+
+      mutated = [:date_of_birth]
+
+      for {field, _} <- @expected_fields_with_types, field not in mutated do
+        actual = Map.get(changes, field)
+        expected = valid_params[Atom.to_string(field)]
+
+        assert actual == expected,
+               "Values did not match for field: #{field}\nexpected: #{inspect(expected)}\nactual: #{inspect(actual)}"
+      end
+
+      expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
+      assert changes.date_of_birth == expected_dob
+    end
+
+    test "error: returns an error changeset when given un-castable values" do
+      invalid_params = invalid_params(@expected_fields_with_types)
+
+      assert %Changeset{valid?: false, errors: errors} =
+               UserBasicSchema.changeset(invalid_params)
+
+      for {field, _} <- @expected_fields_with_types do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :cast,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+    end
+
+    test "error: returns error changeset when required fields are missing" do
+      params = %{}
+
+      assert %Changeset{valid?: false, errors: errors} =
+               UserBasicSchema.changeset(params)
+
+      for {field, _} <- @expected_fields_with_types, field not in @optional do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :required,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+
+      for {field, _} <- @optional do
+        refute errors[field],
+               "The optional field #{field} is required when it shouldn't be."
+      end
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+<!-- livebook:{"branch_parent_index":2} -->
+
+## Testing an Ecto Schema as a Data Validator
+
+### Ecto Schema can be used to build validators for incoming data
+
+* If data are valid, return an `:ok` tuple with a struct built from the input
+* If data are invalid, return an `:error` tuple with the changeset
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule TestingEcto.Schemas.UserValidator do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  @optional_fields [:favorite_number]
+
+  @primary_key false
+  embedded_schema do
+    field(:date_of_birth, :date)
+    field(:email, :string)
+    field(:favorite_number, :float)
+    field(:first_name, :string)
+    field(:last_name, :string)
+    field(:phone_number, :string)
+  end
+
+  defp all_fields do
+    __MODULE__.__schema__(:fields)
+  end
+
+  def cast_and_validate(params) do
+    %__MODULE__{}
+    |> cast(params, all_fields())
+    |> validate_required(all_fields() -- @optional_fields)
+    |> apply_changes_if_valid()
+  end
+
+  defp apply_changes_if_valid(%Ecto.Changeset{valid?: true} = changeset) do
+    {:ok, Ecto.Changeset.apply_changes(changeset)}
+  end
+
+  defp apply_changes_if_valid(%Ecto.Changeset{} = changeset) do
+    {:error, changeset}
+  end
+end
+
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Testing the validator
+
+```elixir
+defmodule TestingEcto.Schemas.UserValidatorTest do
+  use TestingEcto.FirstSchemaCase
+
+  alias TestingEcto.Schemas.UserValidator
+
+  @expected_fields_with_types [
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:last_name, :string},
+    {:phone_number, :string}
+  ]
+
+  @optional [:favorite_number]
+
+  describe "fields and types" do
+    test "it has the correct fields and types" do
+      actual_fields_with_types =
+        for field <- UserValidator.__schema__(:fields) do
+          type = UserValidator.__schema__(:type, field)
+          {field, type}
+        end
+
+      assert Enum.sort(actual_fields_with_types) ==
+               Enum.sort(@expected_fields_with_types)
+    end
+  end
+
+  describe "cast_and_validate/1" do
+    test "success: returns a valid changeset when given valid arguments" do
+      valid_params = valid_params(@expected_fields_with_types)
+
+      {:ok, result} = UserValidator.cast_and_validate(valid_params)
+      assert %UserValidator{} = result
+      mutated = [:date_of_birth]
+
+      for {field, _} <- @expected_fields_with_types, field not in mutated do
+        assert Map.get(result, field) == valid_params[Atom.to_string(field)]
+      end
+
+      expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
+      assert result.date_of_birth == expected_dob
+    end
+
+    test "error: returns an error changeset when given un-castable values" do
+      invalid_params = invalid_params(@expected_fields_with_types)
+
+      assert {:error, %Changeset{errors: errors}} =
+               UserValidator.cast_and_validate(invalid_params)
+
+      for {field, _} <- @expected_fields_with_types do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :cast,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+    end
+
+    test "error: returns error changeset when required fields are missing" do
+      params = %{}
+
+      assert {:error, %Changeset{errors: errors}} =
+               UserValidator.cast_and_validate(params)
+
+      for {field, _} <- @expected_fields_with_types, field not in @optional do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :required,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+<!-- livebook:{"branch_parent_index":2} -->
+
+## Testing an Ecto Schema for Database Interactions
+
+### Sample module updated to be backed by a database
+
+* adds database specific fields (an id and timestamps)
+* no longer uses an embedded schema
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchema do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  @timestamps_opts type: :utc_datetime_usec
+  @primary_key {:id, :binary_id, autogenerate: true}
+  @optional_fields [:id, :favorite_number]
+
+  schema "users" do
+    field(:date_of_birth, :date)
+    field(:email, :string)
+    field(:favorite_number, :float)
+    field(:first_name, :string)
+    field(:last_name, :string)
+    field(:phone_number, :string)
+
+    timestamps()
+  end
+
+  defp all_fields do
+    __MODULE__.__schema__(:fields)
+  end
+
+  def changeset(params) do
+    %__MODULE__{}
+    |> cast(params, all_fields())
+    |> validate_required(all_fields() -- @optional_fields)
+    |> unique_constraint(:email)
+  end
+end
+
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Testing the new module
+
+What's going to fail here?
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchemaFieldsAndTypesTest do
+  use TestingEcto.SchemaCase
+
+  alias TestingEcto.Schemas.UserDatabaseSchema
+
+  @expected_fields_with_types [
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:last_name, :string},
+    {:phone_number, :string}
+  ]
+
+  describe "fields and types" do
+    @tag :schema_definition
+    test "it has the correct fields and types" do
+      actual_fields_with_types =
+        for field <- UserDatabaseSchema.__schema__(:fields) do
+          type = UserDatabaseSchema.__schema__(:type, field)
+          {field, type}
+        end
+
+      assert Enum.sort(actual_fields_with_types) ==
+               Enum.sort(@expected_fields_with_types)
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+### Adding the new fields in the test
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchemaFieldsAndTypesWithNewFieldsTest do
+  use TestingEcto.SchemaCase
+
+  alias TestingEcto.Schemas.UserDatabaseSchema
+
+  @expected_fields_with_types [
+    {:id, :binary_id},
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:inserted_at, :utc_datetime_usec},
+    {:last_name, :string},
+    {:phone_number, :string},
+    {:updated_at, :utc_datetime_usec}
+  ]
+
+  describe "fields and types" do
+    @tag :schema_definition
+    test "it has the correct fields and types" do
+      actual_fields_with_types =
+        for field <- UserDatabaseSchema.__schema__(:fields) do
+          type = UserDatabaseSchema.__schema__(:type, field)
+          {field, type}
+        end
+
+      assert Enum.sort(actual_fields_with_types) ==
+               Enum.sort(@expected_fields_with_types)
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+### Updating the `Case` module's helper functions
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule TestingEcto.SchemaCase do
+  use ExUnit.CaseTemplate
+
+  using do
+    quote do
+      alias Ecto.Changeset
+      import TestingEcto.SchemaCase
+    end
+  end
+
+  setup _ do
+    Ecto.Adapters.SQL.Sandbox.mode(TestingEcto.Repo, :manual)
+  end
+
+  def valid_params(fields_with_types) do
+    valid_value_by_type = %{
+      date: fn -> to_string(Faker.Date.date_of_birth()) end,
+      float: fn -> :rand.uniform() * 10 end,
+      string: fn -> Faker.Lorem.word() end,
+      # generate data for timestamps
+      utc_datetime_usec: fn -> DateTime.utc_now() end,
+      # generate data for id field
+      binary_id: fn -> Ecto.UUID.generate() end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), valid_value_by_type[type].()}
+    end
+  end
+
+  def invalid_params(fields_with_types) do
+    invalid_value_by_type = %{
+      date: fn -> Faker.Lorem.word() end,
+      float: fn -> Faker.Lorem.word() end,
+      string: fn -> DateTime.utc_now() end,
+      # generate data for timestamps
+      utc_datetime_usec: fn -> Faker.Lorem.word() end,
+      # generate data for id field
+      binary_id: fn -> 1 end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), invalid_value_by_type[type].()}
+    end
+  end
+end
+
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Testing the `changeset/1` function
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetTest do
+  use TestingEcto.SchemaCase
+
+  alias TestingEcto.Schemas.UserDatabaseSchema
+
+  @expected_fields_with_types [
+    {:id, :binary_id},
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:inserted_at, :utc_datetime_usec},
+    {:last_name, :string},
+    {:phone_number, :string},
+    {:updated_at, :utc_datetime_usec}
+  ]
+
+  @optional [:id, :favorite_number]
+
+  describe "changeset/1" do
+    test "success: returns a valid changeset when given valid arguments" do
+      valid_params = valid_params(@expected_fields_with_types)
+
+      changeset = UserDatabaseSchema.changeset(valid_params)
+      assert %Changeset{valid?: true, changes: changes} = changeset
+
+      mutated = [:date_of_birth]
+
+      for {field, _} <- @expected_fields_with_types, field not in mutated do
+        assert Map.get(changes, field) == valid_params[Atom.to_string(field)]
+      end
+
+      expected_dob = Date.from_iso8601!(valid_params["date_of_birth"])
+      assert changes.date_of_birth == expected_dob
+    end
+
+    test "error: returns an error changeset when given un-castable values" do
+      invalid_params = invalid_params(@expected_fields_with_types)
+
+      assert %Changeset{valid?: false, errors: errors} =
+               UserDatabaseSchema.changeset(invalid_params)
+
+      for {field, _} <- @expected_fields_with_types do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :cast,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+    end
+
+    test "error: returns error changeset when required fields are missing" do
+      params = %{}
+
+      assert %Changeset{valid?: false, errors: errors} =
+               UserDatabaseSchema.changeset(params)
+
+      for {field, _} <- @expected_fields_with_types, field not in @optional do
+        assert errors[field], "The field :#{field} is missing from errors."
+        {_, meta} = errors[field]
+
+        assert meta[:validation] == :required,
+               "The validation type, #{meta[:validation]}, is incorrect."
+      end
+    end
+
+    test "error: returns error changeset when an email address is reused" do
+      Ecto.Adapters.SQL.Sandbox.checkout(TestingEcto.Repo)
+
+      {:ok, existing_user} =
+        valid_params(@expected_fields_with_types)
+        |> UserDatabaseSchema.changeset()
+        |> TestingEcto.Repo.insert()
+
+      changeset_with_repeated_email =
+        valid_params(@expected_fields_with_types)
+        |> Map.put("email", existing_user.email)
+        |> UserDatabaseSchema.changeset()
+
+      assert {:error, %Changeset{valid?: false, errors: errors}} =
+               TestingEcto.Repo.insert(changeset_with_repeated_email)
+
+      assert errors[:email], "The field :email is missing from errors."
+      {_, meta} = errors[:email]
+
+      assert meta[:constraint] == :unique,
+             "The validation type, #{meta[:validation]}, is incorrect."
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+### Testing constraints
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetUniqueConstraintTest do
+  use TestingEcto.SchemaCase
+
+  alias TestingEcto.Schemas.UserDatabaseSchema
+
+  @expected_fields_with_types [
+    {:id, :binary_id},
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:inserted_at, :utc_datetime_usec},
+    {:last_name, :string},
+    {:phone_number, :string},
+    {:updated_at, :utc_datetime_usec}
+  ]
+
+  describe "changeset/1" do
+    test "error: returns error changeset when an email address is reused" do
+      Ecto.Adapters.SQL.Sandbox.checkout(TestingEcto.Repo)
+
+      {:ok, existing_user} =
+        valid_params(@expected_fields_with_types)
+        |> UserDatabaseSchema.changeset()
+        |> TestingEcto.Repo.insert()
+
+      changeset_with_repeated_email =
+        valid_params(@expected_fields_with_types)
+        |> Map.put("email", existing_user.email)
+        |> UserDatabaseSchema.changeset()
+
+      assert {:error, %Changeset{valid?: false, errors: errors}} =
+               TestingEcto.Repo.insert(changeset_with_repeated_email)
+
+      assert errors[:email], "The field :email is missing from errors."
+      {_, meta} = errors[:email]
+
+      assert meta[:constraint] == :unique,
+             "The validation type, #{meta[:validation]}, is incorrect."
     end
   end
 end
