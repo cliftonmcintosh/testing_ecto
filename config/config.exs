@@ -16,6 +16,7 @@ config :testing_ecto, TestingEcto.Repo,
   password: "postgres",
   database: "testing_ecto_dev",
   hostname: "localhost",
+  pool: Ecto.Adapters.SQL.Sandbox,
   port: 5433,
   pool_size: 10,
   migration_timestamps: [type: :utc_datetime_usec]
