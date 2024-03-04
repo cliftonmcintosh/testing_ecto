@@ -77,6 +77,43 @@ ExUnit.start(autorun: false)
 
 ## Happy path with valid arguments
 
+### Lets try and build a happy path test!
+
+```elixir
+defmodule TestingEcto.Schemas.UserBasicSchemaValidArgumentsTest2 do
+  use ExUnit.Case
+
+  alias Ecto.Changeset
+  alias TestingEcto.Schemas.UserBasicSchema
+
+  @schema_fields [
+    :date_of_birth,
+    :email,
+    :favorite_number,
+    :first_name,
+    :last_name,
+    :phone_number
+  ]
+
+  describe "changeset/1" do
+    test "success: returns a valid changeset when given valid arguments" do
+      params = %{
+        "date_of_birth" => "1948-02-28",
+        "email" => "example@example.com",
+        "favorite_number" => 3.14,
+        "first_name" => "Bob",
+        "last_name" => "Matthews",
+        "phone_number" => "555-555-5555"
+      }
+    end
+  end
+end
+
+ExUnit.run()
+```
+
+### Happy path test described in the book:
+
 ```elixir
 defmodule TestingEcto.Schemas.UserBasicSchemaValidArgumentsTest do
   use ExUnit.Case
@@ -126,7 +163,51 @@ end
 ExUnit.run()
 ```
 
+<!-- livebook:{"branch_parent_index":2} -->
+
 ## Testing casting
+
+```elixir
+defmodule TestingEcto.Schemas.UserBasicSchemaCastingTest2 do
+  use ExUnit.Case
+
+  alias Ecto.Changeset
+  alias TestingEcto.Schemas.UserBasicSchema
+
+  @schema_fields [
+    :date_of_birth,
+    :email,
+    :favorite_number,
+    :first_name,
+    :last_name,
+    :phone_number
+  ]
+
+  describe "changeset/1" do
+    test "error: returns an error changeset when given un-castable values" do
+      not_a_string = DateTime.utc_now()
+
+      # invalid params for each field
+      params = %{
+        "date_of_birth" => "not a date",
+        "email" => not_a_string,
+        "favorite_number" => "not a number",
+        "first_name" => not_a_string,
+        "last_name" => not_a_string,
+        "phone_number" => not_a_string
+      }
+
+      changeset = UserBasicSchema.changeset(params)
+
+      assert %Changeset{valid?: false, errors: errors} = changeset
+
+      assert length(errors) == 6
+    end
+  end
+end
+
+ExUnit.run()
+```
 
 #### Avoid brittle tests
 
@@ -182,9 +263,49 @@ end
 ExUnit.run()
 ```
 
+<!-- livebook:{"branch_parent_index":2} -->
+
 ## Testing schema validation
 
 An example of a useful test for validation would be a test that checks to make sure that required fields are included.
+
+```elixir
+defmodule TestingEcto.Schemas.UserBasicSchemaValidateRequiredFieldsTest2 do
+  use ExUnit.Case
+
+  alias Ecto.Changeset
+  alias TestingEcto.Schemas.UserBasicSchema
+
+  @schema_fields [
+    :date_of_birth,
+    :email,
+    :favorite_number,
+    :first_name,
+    :last_name,
+    :phone_number
+  ]
+
+  describe "changeset/1" do
+    test "error: returns error changeset when required fields are missing" do
+      # Empty map to force violation of the validation for required fields
+      # A nil or empty string would also fail validation for a required field
+      params = %{}
+
+      assert %Changeset{valid?: false, errors: errors, changes: changes} =
+               UserBasicSchema.changeset(params)
+
+      optional_params = [:favorite_number]
+      expected_fields = @schema_fields -- optional_params
+
+      for field <- expected_fields do
+        assert errors[field]
+      end
+    end
+  end
+end
+
+ExUnit.run()
+```
 
 ```elixir
 defmodule TestingEcto.Schemas.UserBasicSchemaValidateRequiredFieldsTest do
@@ -944,6 +1065,43 @@ ExUnit.run()
 ```
 
 ### Testing constraints
+
+<!-- livebook:{"break_markdown":true} -->
+
+Let's create a test to test the email's unique constraint
+
+```elixir
+defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetUniqueConstraintTest2 do
+  use TestingEcto.SchemaCase
+
+  alias TestingEcto.Schemas.UserDatabaseSchema
+
+  @expected_fields_with_types [
+    {:id, :binary_id},
+    {:date_of_birth, :date},
+    {:email, :string},
+    {:favorite_number, :float},
+    {:first_name, :string},
+    {:inserted_at, :utc_datetime_usec},
+    {:last_name, :string},
+    {:phone_number, :string},
+    {:updated_at, :utc_datetime_usec}
+  ]
+
+  describe "changeset/1" do
+    test "error: returns error changeset when an email address is reused" do
+      Ecto.Adapters.SQL.Sandbox.checkout(TestingEcto.Repo)
+
+      {:ok, existing_user} =
+        valid_params(@expected_fields_with_types)
+        |> UserDatabaseSchema.changeset()
+        |> TestingEcto.Repo.insert()
+    end
+  end
+end
+
+ExUnit.run()
+```
 
 ```elixir
 defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetUniqueConstraintTest do
