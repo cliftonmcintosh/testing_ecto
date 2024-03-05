@@ -658,6 +658,47 @@ ExUnit.run()
 
 ## Testing an Ecto Schema as a Data Validator
 
+```elixir
+defmodule TestingEcto.SchemaCaseForValidator do
+  use ExUnit.CaseTemplate
+
+  using do
+    quote do
+      alias Ecto.Changeset
+      import TestingEcto.SchemaCase
+    end
+  end
+
+  setup _ do
+    Ecto.Adapters.SQL.Sandbox.mode(TestingEcto.Repo, :manual)
+  end
+
+  def valid_params(fields_with_types) do
+    valid_value_by_type = %{
+      date: fn -> to_string(Faker.Date.date_of_birth()) end,
+      float: fn -> :rand.uniform() * 10 end,
+      string: fn -> Faker.Lorem.word() end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), valid_value_by_type[type].()}
+    end
+  end
+
+  def invalid_params(fields_with_types) do
+    invalid_value_by_type = %{
+      date: fn -> Faker.Lorem.word() end,
+      float: fn -> Faker.Lorem.word() end,
+      string: fn -> DateTime.utc_now() end
+    }
+
+    for {field, type} <- fields_with_types, into: %{} do
+      {Atom.to_string(field), invalid_value_by_type[type].()}
+    end
+  end
+end
+```
+
 ### Ecto Schema can be used to build validators for incoming data
 
 * If data are valid, return an `:ok` tuple with a struct built from the input
@@ -710,7 +751,7 @@ end
 
 ```elixir
 defmodule TestingEcto.Schemas.UserValidatorTest do
-  use TestingEcto.FirstSchemaCase
+  use TestingEcto.SchemaCaseForValidator
 
   alias TestingEcto.Schemas.UserValidator
 
@@ -913,6 +954,12 @@ ExUnit.run()
 
 ### Updating the `Case` module's helper functions
 
+Update the `valid_params/1` and `invalid_params/1` functions to generate data for testing the new fields that have been added to the schema.
+
+#### Bonus question
+
+Which of our approved credo checks would fail if run against this file?
+
 <!-- livebook:{"force_markdown":true} -->
 
 ```elixir
@@ -1092,7 +1139,7 @@ defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetUniqueConstraintTest2 d
     test "error: returns error changeset when an email address is reused" do
       Ecto.Adapters.SQL.Sandbox.checkout(TestingEcto.Repo)
 
-      {:ok, existing_user} =
+      {:ok, _existing_user} =
         valid_params(@expected_fields_with_types)
         |> UserDatabaseSchema.changeset()
         |> TestingEcto.Repo.insert()
@@ -1102,6 +1149,8 @@ end
 
 ExUnit.run()
 ```
+
+### How they did it in the book
 
 ```elixir
 defmodule TestingEcto.Schemas.UserDatabaseSchemaChangesetUniqueConstraintTest do
